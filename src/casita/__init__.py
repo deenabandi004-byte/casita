@@ -14,6 +14,7 @@ from rich.table import Table
 from . import craigslist, dedup, html, llm, redfin, storage, walk, zillow, zumper
 from .browser import context
 from .models import Listing
+from . import preferences
 from .rank import rank, score
 
 console = Console()
@@ -643,8 +644,11 @@ def show():
     """Show current active listings from the DB."""
     with storage.connect() as conn:
         status_map = {r[0]: r[1] for r in conn.execute("SELECT listing_key, status FROM listing_status")}
-        listings = rank(storage.active_listings(conn), status_map=status_map,
-                        vote_scores=_vote_scores(conn))
+        active = storage.active_listings(conn)
+        walk_map = walk.populate_for(active)
+        profile = preferences.build_profile(conn, walk_map)
+        listings = rank(active, walk_map=walk_map, status_map=status_map,
+                        vote_scores=_vote_scores(conn), profile=profile)
         run = storage.latest_run(conn)
     if run:
         console.print(f"last run #{run['id']} at {run['finished_at']}")
@@ -1057,10 +1061,14 @@ def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
             console.print(f"[bold]dedup:[/bold] deactivated {deactivated} duplicate listings")
         status_rows = conn.execute("SELECT listing_key, status FROM listing_status").fetchall()
         status_map = {r[0]: r[1] for r in status_rows}
-        listings = rank(storage.active_listings(conn), status_map=status_map,
-                        vote_scores=_vote_scores(conn))
+        # walk_map first — the preference profile buckets walk times, so it
+        # needs the same route matrix rank() and the render templates use.
+        active = storage.active_listings(conn)
+        walk_map = walk.populate_for(active)
+        profile = preferences.build_profile(conn, walk_map)
+        listings = rank(active, walk_map=walk_map, status_map=status_map,
+                        vote_scores=_vote_scores(conn), profile=profile)
         run = storage.latest_run(conn)
-        walk_map = walk.populate_for(listings)
         drive_map = walk.populate_drive_for_marin(listings)
         drive_bakery_map = walk.populate_drive_for_bakeries(listings)
         convo_map = {
@@ -1094,6 +1102,7 @@ def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
     out_html.write_text(html.render(
         listings, run=run, walk_map=walk_map, convo_map=convo_map,
         drive_bakery_map=drive_bakery_map, drive_map=drive_map,
+        profile=profile,
     ))
 
     # Per-listing detail pages — one file per active listing under tmp/listing/.
@@ -1106,7 +1115,7 @@ def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
             slug = listing_page._slug(L)
             page_html = listing_page.render_detail(
                 L, conn, walk_map=walk_map, drive_map=drive_map,
-                drive_bakery_map=drive_bakery_map,
+                drive_bakery_map=drive_bakery_map, profile=profile,
             )
             (listing_dir / f"{slug}.html").write_text(page_html)
             detail_count += 1
