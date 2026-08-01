@@ -1391,7 +1391,7 @@ def _amenity_chips(L: Listing) -> list[str]:
 
 def _card(L: Listing, walk_map: dict | None = None, convo: dict | None = None,
           drive_bakery: tuple | None = None, drive_map: dict | None = None,
-          feature: bool = False) -> str:
+          feature: bool = False, profile=None) -> str:
     """Card surface — editorial listing card:
        Photo (carousel) · source + dog overlays · neighborhood + fit verdict ·
        price + size · address · Gemini take · amenity + conversation chips.
@@ -1469,8 +1469,13 @@ def _card(L: Listing, walk_map: dict | None = None, convo: dict | None = None,
 
     # The reason from Gemini IS the card's main message — share_blurb wins
     # when present (designer-friendly), else fall back to llm_reason, else
-    # visual_summary, else nothing.
+    # visual_summary, else the preference-profile explanation as a last
+    # resort so cold-Gemini listings aren't blank when there's real vote
+    # signal saying why this one fits.
     reason_text = L.share_blurb or L.llm_reason or L.visual_summary or ""
+    if not reason_text and profile is not None:
+        from . import preferences
+        reason_text = preferences.explain(L, profile, walk_map)
     reason_html = (
         f'<div class="card-reason">{_esc(reason_text)}</div>' if reason_text else ""
     )
@@ -1627,6 +1632,7 @@ def render(
     drive_bakery_map: dict | None = None,
     drive_map: dict | None = None,
     title: str = "Casita",
+    profile=None,
 ) -> str:
     convo_map = convo_map or {}
     drive_bakery_map = drive_bakery_map or {}
@@ -1645,7 +1651,8 @@ def render(
     cards = "\n".join(
         _card(L, walk_map=walk_map, convo=convo_map.get(L.key),
               drive_bakery=drive_bakery_map.get(L.key),
-              drive_map=drive_map, feature=(L.key == feature_key))
+              drive_map=drive_map, feature=(L.key == feature_key),
+              profile=profile)
         for L in listings
     )
     ts_raw = (run["finished_at"] or run["started_at"]) if run else datetime.utcnow().isoformat()

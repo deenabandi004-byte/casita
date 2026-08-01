@@ -437,7 +437,7 @@ def _compose_share_blurb(L: Listing) -> str:
 
 
 def render_detail(L: Listing, conn: sqlite3.Connection, walk_map=None,
-                  drive_map=None, drive_bakery_map=None) -> str:
+                  drive_map=None, drive_bakery_map=None, profile=None) -> str:
     listing_path = listing_url(L)
     share_blurb = _scrub(_compose_share_blurb(L)) or "Casita listing"
 
@@ -538,6 +538,44 @@ def render_detail(L: Listing, conn: sqlite3.Connection, walk_map=None,
         f'{_render_kv(L, walk_map, drive_map, drive_bakery_map.get(L.key) if drive_bakery_map else None)}'
         f'</div>'
     )
+
+    # "Why this ranked here" panel — the deterministic preference profile's
+    # per-dimension breakdown. Omitted when the profile is None (cold start)
+    # or when nothing on this listing clears MIN_SUPPORT, matching the
+    # byte-identical-prompt behavior of _preference_examples for consistency.
+    preferences_html = ""
+    if profile is not None:
+        from . import preferences as _prefs
+        breakdown = _prefs.explain_breakdown(L, profile, walk_map)
+        if breakdown:
+            rows = "".join(
+                f'<tr>'
+                f'<td>{_esc(row["dimension"].replace("_", " "))}</td>'
+                f'<td>{_esc(str(row["value"]))}</td>'
+                f'<td>{row["weight"]:+.2f}</td>'
+                f'<td>{row["support"]}</td>'
+                f'</tr>'
+                for row in breakdown
+            )
+            preferences_html = (
+                f'<div class="detail-section">'
+                f'<h2>Why this ranked here</h2>'
+                f'<p style="color:var(--ink-2);font-size:13px;margin:0 0 10px">'
+                f'Learned from your up/pass votes. Weight is the decayed vote '
+                f'signal on that dimension &times; value; support is how many '
+                f'votes back it. Only dimensions with support &ge; '
+                f'{_prefs.MIN_SUPPORT} are shown.'
+                f'</p>'
+                f'<table class="pref-table" style="width:100%;border-collapse:collapse;font-size:13px">'
+                f'<thead><tr>'
+                f'<th style="text-align:left;padding:4px 8px">Dimension</th>'
+                f'<th style="text-align:left;padding:4px 8px">This listing</th>'
+                f'<th style="text-align:right;padding:4px 8px">Weight</th>'
+                f'<th style="text-align:right;padding:4px 8px">Support</th>'
+                f'</tr></thead>'
+                f'<tbody>{rows}</tbody>'
+                f'</table></div>'
+            )
 
     source_link = ""
     # Primary source first, then every duplicate found via cross-source dedup.
@@ -641,6 +679,7 @@ def render_detail(L: Listing, conn: sqlite3.Connection, walk_map=None,
   {vote_bar_html}
   {vibe_html}
   {facts_html}
+  {preferences_html}
   {thread_html}
   {shots_html}
   {streetview_html}

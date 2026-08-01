@@ -114,6 +114,7 @@ def rank(
     walk_map: dict | None = None,
     status_map: dict[str, str] | None = None,
     vote_scores: dict[str, int] | None = None,
+    profile=None,
 ) -> list[Listing]:
     """Sort order — six buckets:
      -2. Active pipeline — a live CRM status (contacted → viewing → applied):
@@ -130,9 +131,17 @@ def rank(
     track of past leads. An eliminated listing stays down even if it was once
     up-voted or in the pipeline — the explicit pass is the newer, stronger
     signal. Within each bucket, ties break on heuristic score.
+
+    Optional `profile` (from preferences.build_profile) shifts the tie-break
+    term only — bucket assignment is unchanged, so an up-voted listing stays
+    a favorite whether or not the profile "agrees" with it. profile=None is
+    a byte-identical no-op.
     """
     status_map = status_map or {}
     vote_scores = vote_scores or {}
+    # Local import to keep rank importable even in bare-bones contexts.
+    if profile is not None:
+        from .preferences import preference_adjustment
     def sort_key(L: Listing) -> tuple:
         net = vote_scores.get(L.key, 0)
         status = status_map.get(L.key)
@@ -149,5 +158,8 @@ def rank(
             bucket = 1
         else:
             bucket = 0
-        return (bucket, -net, -strength, L.llm_rank or 0, -score(L, walk_map))
+        heuristic = score(L, walk_map)
+        if profile is not None:
+            heuristic += preference_adjustment(L, profile, walk_map)
+        return (bucket, -net, -strength, L.llm_rank or 0, -heuristic)
     return sorted(listings, key=sort_key)
