@@ -36,6 +36,10 @@ PUBLIC_PROJECT_REFERENCES = (
     "https://matin.github.io/casita/",
     "https://matin.github.io/casita",
     "matin/casita",
+    # shields.io badge URLs encode `/` as `%2F` in the label segment, so the
+    # same public reference shows up URL-encoded in README badges — allowlist
+    # both forms to avoid a false-positive personal-name match on the badge.
+    "matin.github.io%2Fcasita",
 )
 
 TEXT_SUFFIXES = {
