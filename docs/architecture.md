@@ -13,7 +13,7 @@ CLI.
 | Listing model and SQLite | `models.py`, `storage.py` |
 | Sources | `zillow.py`, `craigslist.py`, `zumper.py`, `redfin.py` |
 | Source helpers | `browser.py`, `cache.py`, `dogs.py`, `geo.py`, `locations.py`, `photos.py` |
-| Enrichment and ranking | `llm.py`, `rank.py`, `walk.py`, `dedup.py` |
+| Enrichment and ranking | `llm.py`, `rank.py`, `preferences.py`, `walk.py`, `dedup.py` |
 | Static rendering | `html.py`, `listing_page.py` |
 | Optional private deploy | `cloud_sync.py`, `publish` command |
 
@@ -25,7 +25,9 @@ These are facts about the current codebase, not a ranked task list:
 - Some source-specific URL maps still duplicate the canonical location lists.
 - The public tests are intentionally smoke-focused; scraper behavior still has
   thin coverage.
-- LLM calls are Vertex-only.
+- LLM calls are Vertex-only. Preference learning is now split: the
+  deterministic `preferences.py` path runs credential-free and is unit-tested,
+  while `llm.analyze_preferences` and `llm.rank_listings` remain Vertex-only.
 - `cloud_sync.py` is optional, and its cloud object names are configured
   through environment variables.
 - Rendering is string-based Python rather than templates.
