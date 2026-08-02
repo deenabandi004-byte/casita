@@ -547,6 +547,13 @@ def render_detail(L: Listing, conn: sqlite3.Connection, walk_map=None,
     if profile is not None:
         from . import preferences as _prefs
         breakdown = _prefs.explain_breakdown(L, profile, walk_map)
+        # Only render rows whose value clears MIN_SUPPORT for THIS listing —
+        # zero-support rows contribute nothing to the tie-break, and leaving
+        # them in makes the table read as padded. explain_breakdown still
+        # returns them (it's honest about "we know this dimension exists"),
+        # but the UI keeps its promise of showing what actually moved the
+        # score.
+        breakdown = [r for r in breakdown if r["support"] >= _prefs.MIN_SUPPORT]
         if breakdown:
             rows = "".join(
                 f'<tr>'
