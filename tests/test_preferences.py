@@ -179,6 +179,20 @@ def test_explain_no_matches_returns_empty_string():
     assert preferences.explain(L, profile) == ""
 
 
+def test_explain_breakdown_empty_profile_returns_empty_list():
+    """The detail-page "Why this ranked here" panel omits when the profile
+    is empty. Tested directly rather than inferred from explain()'s
+    behavior — the two functions have separate code paths and a caller
+    (listing_page.render_detail) branches on this exact return value."""
+    conn = _fresh_conn()
+    L = _mk_listing("cold", dog_policy="large_ok", laundry="in-unit",
+                     neighborhood="Inner Richmond")
+    _insert_listing(conn, L)
+    profile = preferences.build_profile(conn, now=datetime(2026, 7, 1, tzinfo=UTC))
+    assert profile.n_events == 0
+    assert preferences.explain_breakdown(L, profile) == []
+
+
 # --- passed_on as down signal --------------------------------------------
 
 

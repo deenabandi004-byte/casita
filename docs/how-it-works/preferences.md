@@ -54,6 +54,13 @@ nor `llm_reason` nor `visual_summary` is present. The detail page adds a
 "Why this ranked here" panel showing every gated dimension, this listing's
 value, and the contributed weight.
 
+Both surfaces omit at cold start (empty profile) — but note that in this
+fixture the profile has learned high-support values across nearly every
+`dog_policy` and both walk-time `>30` buckets, so no natural listing
+triggers the omit path in the demo. That branch is exercised by
+`test_explain_breakdown_empty_profile_returns_empty_list` and its `explain`
+counterpart rather than by anything you can click on.
+
 ## Measuring it
 
 `scripts/eval_preferences.py` runs leave-one-out cross-validation on the
