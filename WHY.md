@@ -41,7 +41,7 @@ eval is a direct demonstration of that — not a claim about it.
   only in the tie-break term inside existing buckets, so an up-voted listing
   stays a favorite whether or not the profile agrees. `profile=None` is a
   byte-identical no-op.
-- `tests/test_preferences.py` — 22 tests covering decay, MIN_SUPPORT
+- `tests/test_preferences.py` — 23 tests covering decay, MIN_SUPPORT
   gating, cold start, passed_on-as-down-signal, leave-one-out exclusion,
   walk-bucket alignment with `rank._walk_bonus`, and byte-identical
   no-profile behavior.
@@ -52,9 +52,12 @@ eval is a direct demonstration of that — not a claim about it.
   perfect result.
 - `docs/how-it-works/preferences.md` — full doc following the existing
   page voice, including a "Ways This Could Go Further" section.
-- Card fallback + a "Why this ranked here" detail-page panel that reads the
-  profile's per-dimension breakdown. Both omitted at cold start rather than
-  rendered empty.
+- Card fallback + a "Why this ranked here" detail-page panel. The panel
+  only shows rows whose value for this specific listing clears MIN_SUPPORT
+  in the profile — dimensions the profile knows about in general but where
+  this listing's value has no supporting evidence contribute nothing to
+  the tie-break, so they're not padding the table. Both surfaces omit at
+  cold start rather than render empty.
 
 ## The number
 
@@ -64,13 +67,13 @@ Lower percentile = closer to the top of the ranked list.
 |                    | n  | baseline | adjusted | delta   |
 | ------------------ | -: | -------: | -------: | ------: |
 | liked listings     |  9 |    0.409 |    0.322 | −0.087  |
-| passed listings    | 15 |    0.343 |    0.332 | −0.011  |
+| passed listings    | 15 |    0.343 |    0.333 | −0.010  |
 
 Interpretation, honestly:
 
 - Liked listings move up ~9 percentile points on average. Directionally
   correct and outside noise for this n.
-- Passed listings barely move (−0.011 is essentially inside noise — I
+- Passed listings barely move (−0.010 is essentially inside noise — I
   expected a small positive, got a small negative). At n=15 with a lot of
   shared structure between liked and passed listings in this fixture (both
   are SF rentals with similar layouts), this is what the data says. It's
