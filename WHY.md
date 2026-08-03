@@ -69,20 +69,31 @@ the top of the ranked list.
 
 |                  |  n | baseline | adjusted |  delta |
 | ---------------- | -: | -------: | -------: | -----: |
-| liked listings   |  9 |    0.409 |    0.313 | -0.096 |
-| passed listings  | 15 |    0.343 |    0.322 | -0.021 |
+| liked listings   |  9 |    0.409 |    0.311 | -0.098 |
+| passed listings  | 15 |    0.343 |    0.323 | -0.020 |
 
 Liked listings move up about 10 percentile points on average. Real at this
 sample size, and the intended effect.
 
 Passed listings also move up a little, 2 percentile points, the wrong
-direction. I expected them to drop, not rise. At n=15 it's still small, about a
-fifth the magnitude of the liked-listings effect, but it's not zero and I won't
-call it noise. Best guess: the passed and liked sets share a lot of structure
-in this fixture (both are SF rentals with similar layouts), so the profile
-picks up features that appear on both and can't cleanly separate them at this
-data size. The eval script prints its own small-n caveat before the numbers,
-on every run.
+direction. I expected them to drop, not rise. It's small, about a fifth the
+magnitude of the liked-listings effect, but it's not zero and it's worth
+naming the mechanism honestly instead of blaming noise.
+
+I checked the underlying vote data. Categorical features are correlated with
+each other in this fixture, and one specific correlation drives most of it:
+the profile picks up `condition_quality=dated` as a positive signal, but every
+up-vote on a `dated` listing lives in a hood the household already prefers
+(sausalito, central richmond, outer richmond, the top-3 up-voted hoods).
+Meanwhile the four passed `dated` listings scatter across neutral hoods
+(central sunset, inner richmond, parkside, mill valley). So `dated` gets
+positive weight not because anyone up-voted a listing for looking dated, but
+because it's a proxy for the hoods the household prefers. The model can't
+cleanly disentangle "we like Marin/Richmond" from "we like dated" from 7
+events. That same confounding nudges some passed listings up when they share
+proxy features with liked ones.
+
+The eval script prints its own small-n caveat before the numbers, on every run.
 
 16 up-votes and about 18 non-empty `passed_on` notes total. Treat this as a
 directional signal, not a validated model.
