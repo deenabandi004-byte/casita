@@ -48,9 +48,9 @@ lambdarank model actually beats the baseline before it ships.
   walk buckets aligned to `rank._walk_bonus(sweet_spot=10)`.
 - `rank.py`: one optional `profile=` parameter, used only in the tie-break term
   inside the existing buckets. `profile=None` is a no-op, verified by test.
-- `tests/test_preferences.py`: 23 tests covering decay, the support gate, cold
+- `tests/test_preferences.py`: 24 tests covering decay, the support gate, cold
   start, `passed_on` as a down-signal, leave-one-out exclusion, walk-bucket
-  alignment, and the no-profile no-op.
+  alignment, hood-variant normalization, and the no-profile no-op.
 - `scripts/eval_preferences.py`: leave-one-out cross-validation. Compares
   `rank.score()` against `rank.score() + preference_adjustment()` directly, not
   through `rank.rank()`, whose favorites bucket would otherwise put held-out likes
