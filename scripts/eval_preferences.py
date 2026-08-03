@@ -33,7 +33,6 @@ import shutil
 import sqlite3
 import sys
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 
 # Make src/ importable when the script is run directly (uv run python scripts/...).
@@ -130,7 +129,6 @@ def _loo_percentiles(
     for target in target_keys:
         profile = preferences.build_profile(
             conn, walk_map, exclude_listing_keys={target},
-            now=datetime.now(timezone.utc),
         )
         adjusted_order = _rank_by_score(all_listings, walk_map, profile=profile)
         baseline_pcts.append(_percentile(target, baseline_order))
