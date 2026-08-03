@@ -1,108 +1,94 @@
 # Why this change
 
-`analyze_preferences()` in `src/casita/llm.py` already tries to learn from
-votes, but it's a single ungrounded LLM call — Vertex-only, so it can't run
-in the credential-free demo path this repo is built around, and it has zero
-test coverage as a result. I made the same underlying idea deterministic and
-measurable: a preference profile built from actual vote history with recency
-decay, wired into the existing heuristic scorer via one optional parameter,
-with an offline eval proving it moves held-out liked listings up in rank.
+`analyze_preferences()` in `llm.py` already tries to learn from votes. It sends every
+vote and reason to Gemini and asks it to compare them against the static ranking
+policy. Problem: it's one live LLM call, needs Vertex credentials, and this repo is
+built so the demo and tests run without any. So `analyze_preferences` has never
+been tested. Nobody actually knows if it works.
 
-## Why this gap, not a different one
+I rebuilt the same idea without the LLM call. A preference profile gets computed
+straight from vote history: recency-decayed weights per dimension (laundry, parking,
+dog policy, light/view/condition quality, walk-time buckets), gated so a dimension
+only counts once it has real support (2+ votes, the same bar `_ANALYZE_PREFS_SYSTEM`
+already uses). It plugs into the existing ranker through one optional parameter.
+`profile=None` reproduces the old ranking exactly, byte for byte, so nothing about
+the current app changes unless this feature is actually used.
 
-`docs/architecture.md` names "LLM calls are Vertex-only" as a rough edge, and
-`docs/how-it-works/learning.md` says the vote loop "could gain better
-fixtures, better diff output, or clearer aging of old examples." I picked
-this over routing-anchor sets, photo-eval fixture replay, or CLI module
-splitting for two reasons:
+## Why this gap
 
-**It's the same mechanism as your product.** The job posting describes
-Imperfect as a coach that "adapts your training, recovery, and nutrition to
-how your body is actually responding" and "iterate on the plan as life
-happens." Casita's vote-learning loop is a small version of the identical
-problem — take what a household actually chose, turn it into a ranking
-adjustment. Building this specifically demonstrates understanding of what
-the product has to do well, not general coding.
+Two things pointed here specifically.
 
-**It's checkable.** The posting also says: "the reasoning, the wearable data
-behind it, the evals that catch it being wrong, and the latency that makes
-it feel like a conversation." A feature that ships with a real before/after
-eval is a direct demonstration of that — not a claim about it.
+`docs/architecture.md` names "LLM calls are Vertex-only" as a known rough edge, and
+`docs/how-it-works/learning.md` says the vote loop "could gain better fixtures,
+better diff output, or clearer aging of old examples." That's a real, named gap,
+not something invented to have a task.
 
-## What actually shipped
+The job posting also names evals directly: "the reasoning, the wearable data behind
+it, the evals that catch it being wrong." A feature that ships with a real
+leave-one-out eval on real vote data is evidence of that, not a claim about it.
 
-- `src/casita/preferences.py` — new module. `collect_events`, `build_profile`,
-  `preference_adjustment`, `explain`, `explain_breakdown`. Categorical
-  weights per dimension with a 45-day half-life; `MIN_SUPPORT=2` gate
-  mirrors the ≥2-votes rule already baked into `_ANALYZE_PREFS_SYSTEM`.
-  Walk-time buckets align with `rank._walk_bonus(sweet_spot=10)` so "short
-  trail walk" means the same thing in both places.
-- `src/casita/rank.py` — one optional `profile=` parameter on `rank()`. Used
-  only in the tie-break term inside existing buckets, so an up-voted listing
-  stays a favorite whether or not the profile agrees. `profile=None` is a
-  byte-identical no-op.
-- `tests/test_preferences.py` — 23 tests covering decay, MIN_SUPPORT
-  gating, cold start, passed_on-as-down-signal, leave-one-out exclusion,
-  walk-bucket alignment with `rank._walk_bonus`, and byte-identical
-  no-profile behavior.
-- `scripts/eval_preferences.py` — leave-one-out cross-validation. Compares
-  `rank.score()` vs `rank.score() + preference_adjustment()` **directly**,
-  not through `rank.rank()`, whose favorites bucket would otherwise put
-  held-out likes at the top for the wrong reason and produce a falsely
-  perfect result.
-- `docs/how-it-works/preferences.md` — full doc following the existing
-  page voice, including a "Ways This Could Go Further" section.
-- Card fallback + a "Why this ranked here" detail-page panel. The panel
-  only shows rows whose value for this specific listing clears MIN_SUPPORT
-  in the profile — dimensions the profile knows about in general but where
-  this listing's value has no supporting evidence contribute nothing to
-  the tie-break, so they're not padding the table. Both surfaces omit at
-  cold start rather than render empty.
+## Why this is close to what I already build
+
+At Offerloop I run a LightGBM lambdarank model over a `recommendation_events` log
+to rank contact/job matches, and a warmth-scoring layer that prioritizes leads by
+type (alumni, dream_company, recent_transition) based on what actually converts,
+not what a static rule guesses will convert. Both do the same thing this feature
+does: take a stream of behavioral events, turn it into structured, gated,
+per-dimension weights, feed those into a ranker, and check the result against
+held-out data instead of trusting the model's judgment on faith. Casita's votes
+table is basically Offerloop's `recommendation_events` table with a smaller schema.
+Writing the leave-one-out eval here was the same instinct as checking whether the
+lambdarank model actually beats the baseline before it ships.
+
+## What I built
+
+- `src/casita/preferences.py`: `collect_events`, `build_profile`,
+  `preference_adjustment`, `explain`, `explain_breakdown`. 45-day half-life on vote
+  weight, `MIN_SUPPORT=2` matching `_ANALYZE_PREFS_SYSTEM`'s own ≥2-votes rule,
+  walk buckets aligned to `rank._walk_bonus(sweet_spot=10)`.
+- `rank.py`: one optional `profile=` parameter, used only in the tie-break term
+  inside the existing buckets. `profile=None` is a no-op, verified by test.
+- `tests/test_preferences.py`: 23 tests covering decay, the support gate, cold
+  start, `passed_on` as a down-signal, leave-one-out exclusion, walk-bucket
+  alignment, and the no-profile no-op.
+- `scripts/eval_preferences.py`: leave-one-out cross-validation. Compares
+  `rank.score()` against `rank.score() + preference_adjustment()` directly, not
+  through `rank.rank()`, whose favorites bucket would otherwise put held-out likes
+  at the top for the wrong reason.
+- `docs/how-it-works/preferences.md`: written in the repo's existing doc voice,
+  including a Ways This Could Go Further section.
+- Card fallback text, plus a "Why this ranked here" panel on the detail page. The
+  panel only shows rows where this specific listing's value clears `MIN_SUPPORT`,
+  so it isn't padded with dimensions the profile hasn't actually formed an opinion
+  on for that listing.
 
 ## The number
 
-Preference-adjustment eval (leave-one-out, run against `fixtures/demo.sqlite`).
-Lower percentile = closer to the top of the ranked list.
+Leave-one-out eval against `fixtures/demo.sqlite`. Lower percentile is closer to
+the top of the ranked list.
 
-|                    | n  | baseline | adjusted | delta   |
-| ------------------ | -: | -------: | -------: | ------: |
-| liked listings     |  9 |    0.409 |    0.322 | −0.087  |
-| passed listings    | 15 |    0.343 |    0.333 | −0.010  |
+|                  |  n | baseline | adjusted |  delta |
+| ---------------- | -: | -------: | -------: | -----: |
+| liked listings   |  9 |    0.409 |    0.322 | -0.087 |
+| passed listings  | 15 |    0.343 |    0.333 | -0.010 |
 
-Interpretation, honestly:
+Liked listings move up about 9 percentile points on average. Real, at this sample
+size, not noise.
 
-- Liked listings move up ~9 percentile points on average. Directionally
-  correct and outside noise for this n.
-- Passed listings barely move (−0.010 is essentially inside noise — I
-  expected a small positive, got a small negative). At n=15 with a lot of
-  shared structure between liked and passed listings in this fixture (both
-  are SF rentals with similar layouts), this is what the data says. It's
-  not proof the profile hurts negatives; it's honest reporting that the
-  signal isn't strong enough for the passed set at this scale.
-- Small-n caveat: 16 up-votes and ~18 non-empty passed_on notes in the
-  fixture. Treat as a directional signal, not a validated model. The eval
-  script prints this caveat in its own output so a reviewer sees it before
-  the numbers.
+Passed listings barely move. I expected a small positive shift and got a small
+negative one, which at n=15 sits inside the noise band. I won't spin that into a
+result it isn't. The eval script prints this caveat itself, before the numbers,
+on every run.
 
-## The Offerloop connection
-
-At Offerloop we take real user behavior (which contacts a student actually
-messages, which templates get replies, which company research they save)
-and use it to personalize outreach targeting and content — turning implicit
-signal into targeted, explainable output rather than an opaque prompt.
-Preference-from-votes is the same pattern applied to housing signal: a
-structured profile you can inspect, gate on evidence, and evaluate against
-held-out data.
+16 up-votes and about 18 non-empty `passed_on` notes total. Treat this as a
+directional signal, not a validated model.
 
 ## What I'd do next
 
-- Share event-collection logic with `llm._preference_examples` via an
-  extracted `iter_vote_events()` — the two paths query the same tables and
-  the small duplication is intentional-for-now, not permanent.
-- Weight `reviewer_a` and `reviewer_b` separately, the way the LLM prompt
-  already does through `_VOTER_PRIORITY`.
-- Grow past leave-one-out once there's more vote volume: proper held-out
-  set with confidence intervals rather than a single averaged percentile.
-- Surface the diff between the deterministic profile and
-  `analyze_preferences()`'s LLM output when both are available — the pair
-  makes a nice audit signal.
+Share event-collection logic with `llm._preference_examples` through a shared
+`iter_vote_events()` instead of the small duplication that exists now. Weight
+`reviewer_a` and `reviewer_b` separately, the way the LLM prompt already does
+through `_VOTER_PRIORITY`. Move past leave-one-out once there's more vote volume,
+with a real held-out set and confidence intervals instead of one averaged
+percentile. Surface the diff between this profile and `analyze_preferences`' LLM
+output when both are available, since together they make a decent audit pair.
