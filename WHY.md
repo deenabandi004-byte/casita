@@ -69,15 +69,19 @@ the top of the ranked list.
 
 |                  |  n | baseline | adjusted |  delta |
 | ---------------- | -: | -------: | -------: | -----: |
-| liked listings   |  9 |    0.409 |    0.322 | -0.087 |
-| passed listings  | 15 |    0.343 |    0.333 | -0.010 |
+| liked listings   |  9 |    0.409 |    0.313 | -0.096 |
+| passed listings  | 15 |    0.343 |    0.322 | -0.021 |
 
-Liked listings move up about 9 percentile points on average. Real, at this sample
-size, not noise.
+Liked listings move up about 10 percentile points on average. Real at this
+sample size, and the intended effect.
 
-Passed listings barely move. I expected a small positive shift and got a small
-negative one, which at n=15 sits inside the noise band. I won't spin that into a
-result it isn't. The eval script prints this caveat itself, before the numbers,
+Passed listings also move up a little, 2 percentile points, the wrong
+direction. I expected them to drop, not rise. At n=15 it's still small, about a
+fifth the magnitude of the liked-listings effect, but it's not zero and I won't
+call it noise. Best guess: the passed and liked sets share a lot of structure
+in this fixture (both are SF rentals with similar layouts), so the profile
+picks up features that appear on both and can't cleanly separate them at this
+data size. The eval script prints its own small-n caveat before the numbers,
 on every run.
 
 16 up-votes and about 18 non-empty `passed_on` notes total. Treat this as a
