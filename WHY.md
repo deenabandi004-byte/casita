@@ -16,6 +16,10 @@ the current app changes unless this feature is actually used.
 
 ## Why this gap
 
+Casita's docs leave "Ways This Could Go Further" notes on most pages, and I
+looked at routing anchor sets, photo-eval fixture replay, and splitting the CLI
+module before picking this one.
+
 Two things pointed here specifically.
 
 `docs/architecture.md` names "LLM calls are Vertex-only" as a known rough edge, and
@@ -29,16 +33,24 @@ leave-one-out eval on real vote data is evidence of that, not a claim about it.
 
 ## Why this is close to what I already build
 
-At Offerloop I run a LightGBM lambdarank model over a `recommendation_events` log
-to rank contact/job matches, and a warmth-scoring layer that prioritizes leads by
-type (alumni, dream_company, recent_transition) based on what actually converts,
-not what a static rule guesses will convert. Both do the same thing this feature
-does: take a stream of behavioral events, turn it into structured, gated,
-per-dimension weights, feed those into a ranker, and check the result against
-held-out data instead of trusting the model's judgment on faith. Casita's votes
-table is basically Offerloop's `recommendation_events` table with a smaller schema.
-Writing the leave-one-out eval here was the same instinct as checking whether the
-lambdarank model actually beats the baseline before it ships.
+At Offerloop I own the ML and data infrastructure: a LightGBM lambdarank model
+over a `recommendation_events` log that ranks contact and job matches, and a
+warmth-scoring layer that prioritizes leads by type (alumni, dream_company,
+recent_transition) based on what actually converts, not what a static rule
+guesses will convert.
+
+The part I actually like about that work is the auditing. A ranker that produces
+a number nobody can interrogate is a ranker nobody should trust, including me. So
+the choices I made here are the ones I make there: deterministic over LLM where
+the deterministic version is good enough, weights you can read off a table
+instead of a score with no explanation, a support gate so one fluke vote can't
+move anything, and an eval before believing any of it. When `dated` showed up
+with positive weight, the reflex to go query the fixture rather than explain it
+away is the same reflex that catches the lambdarank model overfitting to a noisy
+feature.
+
+Casita's votes table is basically `recommendation_events` with a smaller schema.
+Same problem, less data.
 
 ## What I built
 
