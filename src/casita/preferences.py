@@ -184,7 +184,13 @@ def _listing_dim_values(
             out["parking"] = "garage"
         else:
             out["parking"] = "any"
-    hood = (listing.hood or "").strip().lower()
+    # Hood strings come in mixed forms across sources — "Outer Richmond" from
+    # Zillow's title-cased label, "outer-richmond" from the slugified variant,
+    # sometimes with extra whitespace. Normalize separators so they collapse
+    # to the same bucket, otherwise the profile splits credit for the same
+    # hood across two rival keys and under-scores both.
+    hood = (listing.hood or "").strip().lower().replace("-", " ")
+    hood = " ".join(hood.split())
     if hood:
         out["hood"] = hood
     if listing.light_quality:

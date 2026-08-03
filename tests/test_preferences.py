@@ -179,6 +179,26 @@ def test_explain_no_matches_returns_empty_string():
     assert preferences.explain(L, profile) == ""
 
 
+def test_build_profile_hood_variants_collapse_to_same_value():
+    """Zillow's title-cased "Outer Richmond" and the slugified "outer-richmond"
+    are the same neighborhood. Before the normalization fix, they hashed to
+    different profile keys and split credit for the same hood across two
+    rival rows. Both must produce the same dim value and pool their weight."""
+    conn = _fresh_conn()
+    a = _mk_listing("a", dog_policy="large_ok", neighborhood="Outer Richmond")
+    b = _mk_listing("b", dog_policy="large_ok", neighborhood="outer-richmond")
+    _insert_listing(conn, a); _insert_listing(conn, b)
+    ts = datetime(2026, 7, 1, tzinfo=UTC)
+    _insert_vote(conn, a.key, "up", "reviewer_a", ts)
+    _insert_vote(conn, b.key, "up", "reviewer_a", ts)
+
+    profile = preferences.build_profile(conn, now=ts)
+    # Should be one hood entry, not two.
+    hood_keys = list(profile.support.get("hood", {}).keys())
+    assert hood_keys == ["outer richmond"], hood_keys
+    assert profile.support["hood"]["outer richmond"] == 2
+
+
 def test_explain_breakdown_empty_profile_returns_empty_list():
     """The detail-page "Why this ranked here" panel omits when the profile
     is empty. Tested directly rather than inferred from explain()'s
