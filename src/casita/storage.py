@@ -163,6 +163,17 @@ CREATE TABLE IF NOT EXISTS actions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_actions_listing ON actions (listing_key, ts);
+
+-- Snapshot of the last rendered rank, keyed by listing. Used by rank.stable_order
+-- to keep the displayed list from reshuffling on small, meaningless score
+-- changes between runs — a listing only moves ahead of its previous neighbor
+-- when its new score clearly beats it. Written after each render.
+CREATE TABLE IF NOT EXISTS rank_snapshot (
+  listing_key TEXT PRIMARY KEY,
+  position INTEGER NOT NULL,
+  score REAL NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 COLUMNS = [
@@ -513,5 +524,37 @@ def set_status(
              viewing_at=COALESCE(excluded.viewing_at, listing_status.viewing_at),
              updated_at=CURRENT_TIMESTAMP""",
         (listing_key, status, note, viewing_at),
+    )
+    conn.commit()
+
+
+def load_rank_snapshot(conn: sqlite3.Connection) -> dict[str, dict]:
+    """Return {listing_key: {'position': int, 'score': float}} for the last
+    rendered rank, empty dict if none saved yet. Consumed by rank.stable_order.
+    """
+    rows = conn.execute(
+        "SELECT listing_key, position, score FROM rank_snapshot"
+    ).fetchall()
+    return {
+        r["listing_key"]: {"position": r["position"], "score": r["score"]}
+        for r in rows
+    }
+
+
+def save_rank_snapshot(
+    conn: sqlite3.Connection,
+    ordered_listings: list[Listing],
+    walk_map: dict | None = None,
+) -> None:
+    """Overwrite the snapshot with a new (position, score) row per listing.
+
+    Score comes from rank.score() so subsequent stable_order checks compare
+    against the same heuristic that drove the ranking.
+    """
+    from .rank import score  # local: rank imports models, storage stays leaf.
+    conn.execute("DELETE FROM rank_snapshot")
+    conn.executemany(
+        "INSERT INTO rank_snapshot (listing_key, position, score) VALUES (?, ?, ?)",
+        [(L.key, i, float(score(L, walk_map))) for i, L in enumerate(ordered_listings)],
     )
     conn.commit()

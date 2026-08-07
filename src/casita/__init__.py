@@ -647,8 +647,11 @@ def show():
         active = storage.active_listings(conn)
         walk_map = walk.populate_for(active)
         profile = preferences.build_profile(conn, walk_map)
+        prev_snapshot = storage.load_rank_snapshot(conn)
         listings = rank(active, walk_map=walk_map, status_map=status_map,
-                        vote_scores=_vote_scores(conn), profile=profile)
+                        vote_scores=_vote_scores(conn), profile=profile,
+                        prev_snapshot=prev_snapshot)
+        storage.save_rank_snapshot(conn, listings, walk_map=walk_map)
         run = storage.latest_run(conn)
     if run:
         console.print(f"last run #{run['id']} at {run['finished_at']}")
@@ -1066,8 +1069,11 @@ def _render_site(filename: str, output_dir: Path) -> dict[str, int | Path]:
         active = storage.active_listings(conn)
         walk_map = walk.populate_for(active)
         profile = preferences.build_profile(conn, walk_map)
+        prev_snapshot = storage.load_rank_snapshot(conn)
         listings = rank(active, walk_map=walk_map, status_map=status_map,
-                        vote_scores=_vote_scores(conn), profile=profile)
+                        vote_scores=_vote_scores(conn), profile=profile,
+                        prev_snapshot=prev_snapshot)
+        storage.save_rank_snapshot(conn, listings, walk_map=walk_map)
         run = storage.latest_run(conn)
         drive_map = walk.populate_drive_for_marin(listings)
         drive_bakery_map = walk.populate_drive_for_bakeries(listings)

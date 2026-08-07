@@ -110,6 +110,55 @@ The eval script prints its own small-n caveat before the numbers, on every run.
 16 up-votes and about 18 non-empty `passed_on` notes total. Treat this as a
 directional signal, not a validated model.
 
+## Stickiness (added after the interview)
+
+The interviewer pushed back on how much the ranking should lean on live LLM output. His
+example: ten real estate agents would rank the same listings differently, so
+there isn't one objectively correct order, just a reasonable point of view. He
+kept coming back to the word "stickiness": a listing shouldn't jump around in
+the list because a rerun nudged its LLM rank by one or two spots.
+
+He's right that this is a gap. `rank()` throws away the previous render and
+recomputes from scratch every time. `llm_rank` can shift a little between runs
+even at `temperature=0`, since the batch context around a listing changes, and
+two listings end up swapping in the UI for reasons nobody can point to.
+
+Added a `rank_snapshot` table to `storage.py` that stores each listing's last
+displayed position, with `load_rank_snapshot` and `save_rank_snapshot` to read
+and write it. `rank.py` gets `stable_order()`: for two adjacent listings, one
+only overtakes the other if its current heuristic score beats the previous one
+by more than `STICKINESS_THRESHOLD` (5.0, above a single hood-tier flip or
+laundry reclassification, below a full walk-time bucket change). Runs inside
+`rank()` through an optional `prev_snapshot` parameter. `None` is a
+byte-identical no-op, same as `profile=None`.
+
+First pass grouped the stability check by the full sort key, which includes
+`llm_rank`. Two listings only got compared if they already shared the exact
+same rank, which basically never happens, so nothing moved. Dropped `llm_rank`
+from the grouping and kept `(bucket, vote count, pipeline strength)`, and
+stability started doing what it was supposed to: smoothing over `llm_rank`
+jitter instead of being blocked by it.
+
+## The stickiness number
+
+Same `demo.sqlite` fixture. Ran the ranking twice with a small perturbation
+between runs (`llm_rank` shifted up to 2, walk times shifted up to 3 minutes)
+and counted adjacent swaps.
+
+|                | off | on |
+| -------------- | --: | -: |
+| adjacent swaps |  36 | 22 |
+| listings moved |  89 | 48 |
+
+About 40% fewer adjacent swaps and 46% fewer listings moved at all, same
+input, stickiness on vs off.
+
+This is half of the point he raised about things not jumping around. The other
+half, that ten agents would genuinely disagree and Casita still hands back one
+confident order, is still open. Showing where the deterministic score and the
+LLM rank disagree instead of quietly picking one is the bigger idea here, and I
+haven't built it.
+
 ## What I'd do next
 
 Share event-collection logic with `llm._preference_examples` through a shared

@@ -96,6 +96,16 @@ def score(listing: Listing, walk_map: dict | None = None) -> int:
     return s
 
 
+# Stickiness threshold — how much a listing must beat its previous neighbor by
+# before we let it swap positions between runs. Calibrated against score()'s
+# natural steps: the walk-bonus ladder moves in 5-point rungs (15/10/5/1/-3)
+# and the hood fallback contributes 1-6. So a single hood-tier flip, a
+# laundry re-classification (±3), or a parking-string reword (±2) all fall at
+# or below 5 and get suppressed as noise. A change bigger than that — a full
+# walk-bucket step for the Presidio anchor (×2 = 10), a bed/bath threshold
+# crossing, or several small changes stacking — clears 5 and reorders.
+STICKINESS_THRESHOLD = 5.0
+
 ELIMINATED_STATUSES = frozenset({"declined_by_landlord", "declined_by_us", "passed_on"})
 
 # Active CRM pipeline — the listings we're actually pursuing. Higher strength =
@@ -109,12 +119,66 @@ PIPELINE_STRENGTH = {
 }
 
 
+def stable_order(
+    sorted_listings: list[Listing],
+    prev_snapshot: dict[str, dict] | None,
+    *,
+    threshold: float,
+    walk_map: dict | None = None,
+    profile=None,
+) -> list[Listing]:
+    """Suppress reshuffling on small, meaningless score changes.
+
+    Walks the freshly sorted list. For each adjacent pair (a, b) that was in
+    the opposite order in the previous snapshot (b was ahead of a last time),
+    only accept the new order if a's heuristic score beats b's by more than
+    `threshold`. Otherwise restore the previous relative order.
+
+    A listing missing from the snapshot has no prior claim, so its position
+    is left as-is (no threshold check). An empty / None snapshot returns the
+    fresh order unchanged — the pattern used on the first run before any
+    snapshot has been written.
+
+    When `profile` is provided, the current-score heuristic used for the
+    threshold check is `score() + preference_adjustment()` — the same
+    combined signal rank()'s sort key uses. Otherwise it's pure score().
+    Kept aligned on purpose: the sort and the stability check disagreeing
+    would let the profile shift a listing without stability seeing it.
+    """
+    if not prev_snapshot:
+        return list(sorted_listings)
+    ordered = list(sorted_listings)
+    # Local import mirrors rank()'s pattern — keeps this module importable
+    # in bare-bones contexts that don't pull in preferences.
+    if profile is not None:
+        from .preferences import preference_adjustment
+        scores = {
+            L.key: score(L, walk_map) + preference_adjustment(L, profile, walk_map)
+            for L in ordered
+        }
+    else:
+        scores = {L.key: score(L, walk_map) for L in ordered}
+    for i in range(len(ordered) - 1):
+        a, b = ordered[i], ordered[i + 1]
+        pa = prev_snapshot.get(a.key)
+        pb = prev_snapshot.get(b.key)
+        if pa is None or pb is None:
+            continue
+        # b was ahead of a last time — a is trying to leapfrog. Allow only
+        # when the current-score gap is wider than the threshold.
+        if pb["position"] < pa["position"] and scores[a.key] - scores[b.key] <= threshold:
+            ordered[i], ordered[i + 1] = b, a
+    return ordered
+
+
 def rank(
     listings: list[Listing],
     walk_map: dict | None = None,
     status_map: dict[str, str] | None = None,
     vote_scores: dict[str, int] | None = None,
     profile=None,
+    prev_snapshot: dict[str, dict] | None = None,
+    stickiness_threshold: float = STICKINESS_THRESHOLD,
 ) -> list[Listing]:
     """Sort order — six buckets:
      -2. Active pipeline — a live CRM status (contacted → viewing → applied):
@@ -136,6 +200,13 @@ def rank(
     term only — bucket assignment is unchanged, so an up-voted listing stays
     a favorite whether or not the profile "agrees" with it. profile=None is
     a byte-identical no-op.
+
+    Optional `prev_snapshot` (from storage.load_rank_snapshot) is threaded
+    into stable_order after sorting so displayed order doesn't reshuffle on
+    small, meaningless score changes between runs. Stability is applied per
+    rank tier — never across bucket / vote / pipeline / llm_rank boundaries —
+    so a newly-favorited listing still jumps to its bucket. prev_snapshot=None
+    is a byte-identical no-op.
     """
     status_map = status_map or {}
     vote_scores = vote_scores or {}
@@ -162,4 +233,21 @@ def rank(
         if profile is not None:
             heuristic += preference_adjustment(L, profile, walk_map)
         return (bucket, -net, -strength, L.llm_rank or 0, -heuristic)
-    return sorted(listings, key=sort_key)
+    ordered = sorted(listings, key=sort_key)
+    if prev_snapshot is None:
+        return ordered
+    # Apply stability within each rank tier — bucket, vote-count, and pipeline
+    # strength are strong signals we never want to override, but llm_rank
+    # jitter between runs is exactly what stickiness is for. So group on
+    # (bucket, -net, -strength) and let stable_order see across llm_rank
+    # changes inside that group: it only accepts a swap when the heuristic
+    # score also clearly moved.
+    from itertools import groupby
+    tier_key = lambda L: sort_key(L)[:3]  # noqa: E731 — local helper
+    result: list[Listing] = []
+    for _, run in groupby(ordered, key=tier_key):
+        result.extend(stable_order(
+            list(run), prev_snapshot,
+            threshold=stickiness_threshold, walk_map=walk_map, profile=profile,
+        ))
+    return result
